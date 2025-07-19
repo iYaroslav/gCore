@@ -21,12 +21,12 @@ export class ShaderProgram {
     gl.attachShader(program, fragmentShader)
     gl.linkProgram(program)
 
-    console.log('For', path)
-    const numAttribs = gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES)
-    for (let i = 0; i < numAttribs; i++) {
-      const info = gl.getActiveAttrib(program, i)
-      console.log(`[ATTRIB ${i}]`, info?.name, info?.type, info?.size)
-    }
+    // console.log('For', path)
+    // const numAttribs = gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES)
+    // for (let i = 0; i < numAttribs; i++) {
+    //   const info = gl.getActiveAttrib(program, i)
+    //   console.log(`[ATTRIB ${i}]`, info?.name, info?.type, info?.size)
+    // }
 
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       console.error(`Shader program ${ path } failed to link:`, gl.getProgramInfoLog(program))

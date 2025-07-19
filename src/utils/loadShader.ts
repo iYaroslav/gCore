@@ -1,5 +1,5 @@
 export async function loadShader(gl: WebGL2RenderingContext, path: string, type: number): Promise<WebGLShader> {
-  console.info(`Loading shader from path:`, path)
+  // console.info(`Loading shader from path:`, path)
   const response = await fetch(path)
   const src = await response.text()
 

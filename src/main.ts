@@ -10,8 +10,13 @@ const ebo = gl.createBuffer()
 
 let scene: ShaderProgram
 let shadow: ShaderProgram
+let debug: ShaderProgram
 
 const DEMO_SHADERS = false
+const DEBUG = false
+
+const cubeSize = 1
+const cubeBevel = 0.05
 
 const model = mat4.create()
 const view = mat4.create()
@@ -20,7 +25,8 @@ const lightView = mat4.create()
 const lightProjection = mat4.create()
 const lightVP = mat4.create()
 
-mat4.lookAt(view, [2, 2, 4], [0, 0, 0], [0, 1, 0])
+const eye = [2, 2, 4]
+mat4.lookAt(view, new Float32Array(eye), [0, 0, 0], [0, 1, 0])
 mat4.perspective(projection, Math.PI / 4, canvas.width / canvas.height, 0.1, 100)
 mat4.lookAt(lightView, [3, 6, 3], [0, 0, 0], [0, 1, 0])
 mat4.ortho(lightProjection, -5, 5, -5, 5, 1, 20) // ортографическая проекция для света
@@ -58,7 +64,7 @@ function setupAttributes(prog: ShaderProgram, type: string) {
   //   gl.enableVertexAttribArray(norm)
   //   gl.vertexAttribPointer(norm, 3, gl.FLOAT, false, stride, 3 * 4)
   // }
-  const stride = 7 * 4 // 7 float на вершину
+  const stride = DEMO_SHADERS ? 7 * 4 : 8 * 4
 
   if (type === 'shadow') {
     prog.setAttribute({
@@ -75,6 +81,7 @@ function setupAttributes(prog: ShaderProgram, type: string) {
       prog.setAttribute({
         aPosition: { size: 3, stride, offset: 0 },
         aNormal:   { size: 3, stride, offset: 3 * 4 },
+        aUV:   { size: 2, stride, offset: 6 * 4 },
       })
     }
   }
@@ -102,8 +109,14 @@ function initShadowBuffer() {
 function render(time: number) {
   time *= 0.001
   mat4.identity(model)
+
+  // mat4.rotateX(model, model, 10)
+  // mat4.rotateY(model, model, 30)
+
   mat4.rotateY(model, model, time * 0.5)
   mat4.rotateX(model, model, time * 0.3)
+  // mat4.rotateY(model, model, time)
+  // mat4.rotateX(model, model, time)
 
   // Shadow pass
   gl.bindFramebuffer(gl.FRAMEBUFFER, depthFBO)
@@ -122,6 +135,15 @@ function render(time: number) {
   resizeCanvas()
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
+  if (DEBUG) {
+    debug.use()
+    debug.setUniformMatrix('uModel', model)
+    debug.setUniformMatrix('uView', view)
+    debug.setUniformMatrix('uProjection', projection)
+    setupAttributes(scene, 'debug')
+    drawCube(gl)
+  }
+
   scene.use()
   scene.setUniformMatrix('uModel', model)
   scene.setUniformMatrix('uView', view)
@@ -130,6 +152,8 @@ function render(time: number) {
 
   if (DEMO_SHADERS) {
     scene.setUniform('uTime', time)
+  } else {
+    scene.setUniform('uCameraPos', eye)
   }
 
   scene.setUniform('uLightDirection', [-0.5, -1, -0.3])
@@ -137,6 +161,13 @@ function render(time: number) {
   scene.setUniform('uObjectColor', [0.8, 0.2, 0.3])
 
   scene.setUniformTexture('uShadowMap', depthTex, 0)
+
+  const inner = cubeSize / 2 - cubeBevel;
+
+  scene.setUniform('uInner', [inner, inner, inner]);
+  scene.setUniform('uBevel', cubeBevel);
+  scene.setUniform('uSpecularPower', 128);
+  scene.setUniform('uSpecularIntensity', 1);
 
   setupAttributes(scene, 'scene')
   drawCube(gl)
@@ -153,8 +184,12 @@ async function main() {
   scene = await ShaderProgram.create(gl, DEMO_SHADERS ? 'scene' : 'cube')
   shadow = await ShaderProgram.create(gl, 'shadow')
 
+  if (DEBUG) {
+    debug = await ShaderProgram.create(gl, 'debug')
+  }
+
   initShadowBuffer()
-  loadCube(gl, vbo, ebo)
+  loadCube(gl, vbo, ebo, !DEMO_SHADERS, cubeSize, cubeBevel)
 
   render(0)
 }
