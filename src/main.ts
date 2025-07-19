@@ -1,220 +1,151 @@
-import { Entity } from './ecs/Entity'
-import {
-  Position,
-  Velocity,
-  Renderable,
-  Player,
-  Collider,
-  Friction,
-  Mass,
-  Force,
-  Bounce,
-  Substrate,
-  Health,
-  Bullet,
-  Rotation,
-  AngularVelocity,
-} from './ecs/components'
-import {
-  MovementSystem, CollisionSystem, PhysicsSystem, FrictionSystem, SpringSystem, BotSystem, RotationSystem,
-  AngularFrictionSystem,
-} from './ecs/systems'
-import InputSystem, { handleIO, IO } from './ecs/system/input.ts'
-import DebugDrawSystem from './ecs/system/debugDraw.ts'
+import { mat4 } from 'gl-matrix'
+import loadCube, { drawCube } from './objects/cube.ts'
+import { ShaderProgram } from './utils/ShaderProgram.ts'
 import './style.css'
-import EnvironmentSystem from './ecs/system/environment.ts'
 
 const canvas = document.getElementById("game") as HTMLCanvasElement
-const ctx = canvas.getContext("2d")!
-canvas.width = innerWidth
-canvas.height = innerHeight
+const gl = canvas.getContext("webgl2")!
+const vbo = gl.createBuffer()
+const ebo = gl.createBuffer()
+
+let scene: ShaderProgram
+let shadow: ShaderProgram
+
+const model = mat4.create()
+const view = mat4.create()
+const projection = mat4.create()
+const lightView = mat4.create()
+const lightProjection = mat4.create()
+const lightVP = mat4.create()
+
+mat4.lookAt(view, [2, 2, 4], [0, 0, 0], [0, 1, 0])
+mat4.perspective(projection, Math.PI / 4, canvas.width / canvas.height, 0.1, 100)
+mat4.lookAt(lightView, [3, 6, 3], [0, 0, 0], [0, 1, 0])
+mat4.ortho(lightProjection, -5, 5, -5, 5, 1, 20) // ортографическая проекция для света
+mat4.multiply(lightVP, lightProjection, lightView)
+
+const depthFBO = gl.createFramebuffer()
+const depthTex = gl.createTexture()
 
 function resizeCanvas() {
   canvas.width = window.innerWidth
   canvas.height = window.innerHeight
+
+  gl.viewport(0, 0, canvas.width, canvas.height)
+  mat4.perspective(projection, Math.PI / 4, canvas.width / canvas.height, 0.1, 100)
 }
+
 window.addEventListener("resize", resizeCanvas)
 resizeCanvas()
 
-let lastTime = performance.now()
-const entities: Entity[] = []
+function setupAttributes(prog: ShaderProgram, type: string) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+  // const stride = 6 * 4
 
-handleIO()
+  // if (prog.hasAttribute('aPosition')) {
+  //   const pos = prog.getAttribute('aPosition')
+  //
+  //   gl.enableVertexAttribArray(pos)
+  //   gl.vertexAttribPointer(pos, 3, gl.FLOAT, false, stride, 0)
+  // }
+  //
+  //
+  // if (prog.hasAttribute('aNormal')) {
+  //   const norm = prog.getAttribute('aNormal')
+  //
+  //   gl.enableVertexAttribArray(norm)
+  //   gl.vertexAttribPointer(norm, 3, gl.FLOAT, false, stride, 3 * 4)
+  // }
+  const stride = 7 * 4 // 7 float на вершину
 
-// == Setup ==
-const player = new Entity()
-  .add(Position, { x: canvas.width / 2, y: canvas.height / 2 })
-  .add(Velocity)
-  .add(Force)
-  .add(Substrate)
-  .add(Mass, { kg: 80 })
-  .add(Friction, { mu: 0.2 })
-  .add(Collider, { type: 'circle' })
-  .add(Bounce, { restitution: 0.3 })
-  .add(Renderable, { color: 'yellow', size: 24, shape: 'triangle' })
-  .add(Player)
-  .add(Health, { hp: 5 })
-
-entities.push(player)
-
-const botAI: { entity: Entity; angle: number; radius: number }[] = []
-
-function spawnBot(x: number, y: number) {
-  const bot = new Entity()
-    .add(Position, { x, y })
-    .add(Velocity)
-    .add(Force)
-    .add(Mass, { kg: 80 })
-    .add(Collider, { type: 'circle' })
-    .add(Rotation)
-    .add(AngularVelocity)
-    .add(Bounce, { restitution: 0.2 })
-    .add(Substrate)
-    .add(Renderable, {
-      shape: "triangle", size: 24, color: "orange",
+  if (type === 'shadow') {
+    prog.setAttribute({
+      aPosition: { size: 3, stride, offset: 0 },
     })
-    .add(Health, { hp: 5 })
-
-  botAI.push({ entity: bot, angle: Math.random() * Math.PI * 2, radius: 40 })
-  entities.push(bot)
-}
-
-spawnBot(300, 200)
-spawnBot(400, 300)
-
-for (let i = 0; i < 6; i++) {
-  const mass = 100 + Math.random() * 100
-  // const mass = 1 + Math.random() * 5
-  const color = `hsl(${ Math.round(mass / 2) }, 80%, 60%)`
-  const box = new Entity()
-    .add(Position, {
-      x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+  } else {
+    prog.setAttribute({
+      aPosition: { size: 3, stride, offset: 0 },
+      aNormal:   { size: 3, stride, offset: 3 * 4 },
+      aFaceId:   { size: 1, stride, offset: 6 * 4 }
     })
-    .add(Velocity)
-    .add(Force)
-    .add(Substrate)
-    .add(Mass, { kg: mass })
-    .add(Friction, { mu: 0.6 })
-    .add(Collider, { type: 'rect' })
-    .add(Rotation)
-    .add(AngularVelocity)
-    .add(Bounce, { restitution: 0.9 })
-    .add(Renderable, {
-      size: 32, shape: 'square', color,
-    })
-
-  entities.push(box)
-}
-
-function drawCrosshair(ctx: CanvasRenderingContext2D) {
-  const { x, y } = IO.mouse
-
-  ctx.save()
-  ctx.strokeStyle = "white"
-  ctx.lineWidth = 2
-
-  const size = 10
-
-  ctx.beginPath()
-  ctx.moveTo(x - size, y)
-  ctx.lineTo(x + size, y)
-  ctx.moveTo(x, y - size)
-  ctx.lineTo(x, y + size)
-  ctx.stroke()
-
-  ctx.restore()
-}
-
-function drawHealthBar(ctx: CanvasRenderingContext2D, e: Entity) {
-  if (e.has(Bullet) || !e.has(Health) || !e.has(Position) || !e.has(Renderable)) return
-
-  const hp = Math.max(0, e.get(Health).hp)
-  const maxHp = 5
-  const { x, y } = e.get(Position)
-  const size = e.get(Renderable).size
-
-  const barWidth = size
-  const barHeight = 4
-  const offsetY = size / 2 + 6
-
-  ctx.fillStyle = "#444"
-  ctx.fillRect(x - barWidth / 2, y - offsetY, barWidth, barHeight)
-
-  ctx.fillStyle = "lime"
-  ctx.fillRect(x - barWidth / 2, y - offsetY, (hp / maxHp) * barWidth, barHeight)
-}
-
-function updateSystems(entities: Entity[], delta: number) {
-  InputSystem(entities, player, delta)
-  BotSystem(botAI, delta)
-  EnvironmentSystem(entities, delta)
-  PhysicsSystem(entities, delta)
-  FrictionSystem(entities, delta)
-  AngularFrictionSystem(entities, delta)
-  RotationSystem(entities, delta)
-  MovementSystem(entities, delta)
-  CollisionSystem(entities)
-  SpringSystem(entities)
-}
-
-// == Main Loop ==
-function loop(time: number) {
-  const delta = (time - lastTime) / 1000
-  lastTime = time
-
-  updateSystems(entities, delta)
-
-  // Render
-  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-  for (const e of entities) {
-    if (!e.has(Position) || !e.has(Renderable)) continue
-    const pos = e.get(Position)
-    const rend = e.get(Renderable)
-
-    ctx.save()
-    ctx.translate(pos.x, pos.y)
-
-    if (e.has(Rotation)) {
-      const rot = e.get(Rotation)
-      ctx.rotate(rot.angle)
-    }
-
-    // Rotate to face mouse if player
-    if (e.has(Player)) {
-      const dx = IO.mouse.x - pos.x
-      const dy = IO.mouse.y - pos.y
-      ctx.rotate(Math.atan2(dy, dx))
-    }
-
-    ctx.fillStyle = rend.color
-    const size = rend.size
-    switch (rend.shape) {
-      case 'circle':
-        ctx.beginPath()
-        ctx.arc(0, 0, size / 2, 0, Math.PI * 2)
-        ctx.fill()
-        break
-      case 'square':
-        ctx.fillRect(-size / 2, -size / 2, size, size)
-        break
-      case 'triangle':
-        ctx.beginPath()
-        ctx.moveTo(size / 2, 0)
-        ctx.lineTo(-size / 2, size / 2)
-        ctx.lineTo(-size / 2, -size / 2)
-        ctx.closePath()
-        ctx.fill()
-        break
-    }
-
-    ctx.restore()
-
-    drawHealthBar(ctx, e)
-    drawCrosshair(ctx)
   }
 
-  DebugDrawSystem(ctx, entities)
-  requestAnimationFrame(loop)
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo)
 }
 
-requestAnimationFrame(loop)
+function initShadowBuffer() {
+  const size = 1024
+
+  gl.bindTexture(gl.TEXTURE_2D, depthTex)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, size, size, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, depthFBO)
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTex, 0)
+  gl.drawBuffers([gl.NONE])
+  gl.readBuffer(gl.NONE)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+}
+
+function render(time: number) {
+  time *= 0.001
+  mat4.identity(model)
+  mat4.rotateY(model, model, time * 0.5)
+  mat4.rotateX(model, model, time * 0.3)
+
+  // Shadow pass
+  gl.bindFramebuffer(gl.FRAMEBUFFER, depthFBO)
+  gl.viewport(0, 0, 1024, 1024)
+  gl.clear(gl.DEPTH_BUFFER_BIT)
+
+  shadow.use()
+  shadow.setUniformMatrix('uModel', model)
+  shadow.setUniformMatrix('uLightViewProjection', lightVP)
+
+  setupAttributes(shadow, 'shadow')
+  drawCube(gl)
+
+  // Main pass
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  resizeCanvas()
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+  scene.use()
+  scene.setUniformMatrix('uModel', model)
+  scene.setUniformMatrix('uView', view)
+  scene.setUniformMatrix('uProjection', projection)
+  scene.setUniformMatrix('uLightViewProjection', lightVP)
+
+  scene.setUniform('uTime', time)
+
+  scene.setUniform('uLightDirection', [-0.5, -1, -0.3])
+  scene.setUniform('uLightColor', [1, 1, 1])
+  scene.setUniform('uObjectColor', [0.8, 0.2, 0.3])
+
+  scene.setUniformTexture('uShadowMap', depthTex, 0)
+
+  setupAttributes(scene, 'scene')
+  drawCube(gl)
+
+  requestAnimationFrame(render)
+}
+
+async function main() {
+  gl.enable(gl.DEPTH_TEST)
+  // gl.clear(gl.DEPTH_BUFFER_BIT)
+  // gl.enable(gl.CULL_FACE)
+  gl.clearColor(0.1, 0.1, 0.1, 1.0)
+
+  scene = await ShaderProgram.create(gl, 'scene')
+  shadow = await ShaderProgram.create(gl, 'shadow')
+
+  initShadowBuffer()
+  loadCube(gl, vbo, ebo)
+
+  render(0)
+}
+
+main().catch(console.error)
