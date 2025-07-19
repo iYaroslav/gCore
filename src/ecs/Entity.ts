@@ -1,23 +1,30 @@
+import type { EntityComponent } from './units.ts'
+import { Bullet, Mass } from './components.ts'
+
+const conflicts = [
+  [Mass, Bullet]
+]
+
 export class Entity {
-  static nextId = 0
-  id: number
-  components = new Map<string, any>()
+  components = new Map<any, EntityComponent>()
   dead = false
 
-  constructor() {
-    this.id = Entity.nextId++
-  }
+  add<T extends EntityComponent>(Cls: new () => T, data?: Partial<T>): this {
+    for (const [a, b] of conflicts) {
+      if ((Cls.name === a.name && this.has(b))|| (Cls.name === b.name && this.has(a))) {
+        throw new Error(`Don't use "${ a.name }" and "${ b.name }" together in one entity!`)
+      }
+    }
 
-  add<T>(component: new (...args: any[]) => T, data?: Partial<T>): this {
-    this.components.set(component.name, Object.assign(new component(), data))
+    this.components.set(Cls, Object.assign(new Cls(), data))
     return this
   }
 
-  get<T>(component: new (...args: any[]) => T): T {
-    return this.components.get(component.name)
+  get<T extends EntityComponent>(cls: new () => T): T {
+    return this.components.get(cls) as T
   }
 
-  has<T>(component: new (...args: any[]) => T): boolean {
-    return this.components.has(component.name)
+  has<T extends EntityComponent>(cls: new () => T): boolean {
+    return this.components.has(cls)
   }
 }

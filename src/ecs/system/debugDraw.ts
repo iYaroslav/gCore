@@ -1,58 +1,49 @@
-import { Position, Renderable, Rotation, Velocity, AngularVelocity } from '../ecs/components.ts'
-import type { Entity } from '../ecs/Entity.ts'
+import { Position, Renderable, Rotation, Velocity, Collider } from '../components.ts'
+import type { Entity } from '../Entity.ts'
 
-export function debugDraw(ctx: CanvasRenderingContext2D, entities: Entity[]) {
+export default function DebugDrawSystem(ctx: CanvasRenderingContext2D, entities: Entity[]) {
   for (const e of entities) {
-    if (!e.has(Position) || !e.has(Renderable)) continue;
+    if (!e.has(Renderable) || e.has(Position)) return
 
-    const pos = e.get(Position);
-    const render = e.get(Renderable);
-    const angle = e.get(Rotation)?.angle ?? 0;
-    const size = render.size;
+    const pos = e.get(Position)
+    const vel = e.get(Velocity)
+    const shape = e.get(Collider).type ?? "circle"
+    const size = e.get(Renderable).size ?? 16
+    const rot = e.get(Rotation)?.angle ?? 0
 
-    ctx.save();
-    ctx.translate(pos.x, pos.y);
-    ctx.rotate(angle);
+    ctx.save()
+    ctx.translate(pos.x, pos.y)
+    ctx.rotate(rot)
 
-    // Отладочная рамка
-    ctx.strokeStyle = 'lime';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "#00F"
+    ctx.lineWidth = 1
 
-    if (render.shape === 'circle') {
-      ctx.beginPath();
-      ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (render.shape === 'square') {
-      ctx.strokeRect(-size / 2, -size / 2, size, size);
-    } else if (render.shape === 'triangle') {
-      const h = size * Math.sqrt(3) / 2;
-      ctx.beginPath();
-      ctx.moveTo(0, -h / 1.5);
-      ctx.lineTo(size / 2, h / 3);
-      ctx.lineTo(-size / 2, h / 3);
-      ctx.closePath();
-      ctx.stroke();
+    if (shape === "circle") {
+      ctx.beginPath()
+      ctx.arc(0, 0, size / 2, 0, Math.PI * 2)
+      ctx.stroke()
+    } else {
+      ctx.beginPath()
+      ctx.rect(-size / 2, -size / 2, size, size)
+      ctx.stroke()
     }
 
-    // Визуализация вектора скорости
-    if (e.has(Velocity)) {
-      const vel = e.get(Velocity);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.strokeStyle = 'cyan';
-      ctx.lineTo(vel.x * 0.1, vel.y * 0.1);
-      ctx.stroke();
+    // скорость
+    if (vel) {
+      ctx.strokeStyle = "#0A0"
+      ctx.beginPath()
+      ctx.moveTo(0, 0)
+      ctx.lineTo(vel.x * 0.2, vel.y * 0.2)
+      ctx.stroke()
     }
 
-    // Визуализация вращения
-    if (e.has(AngularVelocity)) {
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, -10);
-      ctx.strokeStyle = 'orange';
-      ctx.stroke();
-    }
+    // направление
+    ctx.strokeStyle = "#F00"
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.lineTo(size / 2, 0)
+    ctx.stroke()
 
-    ctx.restore();
+    ctx.restore()
   }
 }
