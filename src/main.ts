@@ -11,6 +11,8 @@ const ebo = gl.createBuffer()
 let scene: ShaderProgram
 let shadow: ShaderProgram
 
+const DEMO_SHADERS = false
+
 const model = mat4.create()
 const view = mat4.create()
 const projection = mat4.create()
@@ -63,11 +65,18 @@ function setupAttributes(prog: ShaderProgram, type: string) {
       aPosition: { size: 3, stride, offset: 0 },
     })
   } else {
-    prog.setAttribute({
-      aPosition: { size: 3, stride, offset: 0 },
-      aNormal:   { size: 3, stride, offset: 3 * 4 },
-      aFaceId:   { size: 1, stride, offset: 6 * 4 }
-    })
+    if (DEMO_SHADERS) {
+      prog.setAttribute({
+        aPosition: { size: 3, stride, offset: 0 },
+        aNormal:   { size: 3, stride, offset: 3 * 4 },
+        aFaceId:   { size: 1, stride, offset: 6 * 4 }
+      })
+    } else {
+      prog.setAttribute({
+        aPosition: { size: 3, stride, offset: 0 },
+        aNormal:   { size: 3, stride, offset: 3 * 4 },
+      })
+    }
   }
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo)
@@ -119,7 +128,9 @@ function render(time: number) {
   scene.setUniformMatrix('uProjection', projection)
   scene.setUniformMatrix('uLightViewProjection', lightVP)
 
-  scene.setUniform('uTime', time)
+  if (DEMO_SHADERS) {
+    scene.setUniform('uTime', time)
+  }
 
   scene.setUniform('uLightDirection', [-0.5, -1, -0.3])
   scene.setUniform('uLightColor', [1, 1, 1])
@@ -139,7 +150,7 @@ async function main() {
   // gl.enable(gl.CULL_FACE)
   gl.clearColor(0.1, 0.1, 0.1, 1.0)
 
-  scene = await ShaderProgram.create(gl, 'scene')
+  scene = await ShaderProgram.create(gl, DEMO_SHADERS ? 'scene' : 'cube')
   shadow = await ShaderProgram.create(gl, 'shadow')
 
   initShadowBuffer()
